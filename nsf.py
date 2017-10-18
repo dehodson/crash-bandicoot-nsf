@@ -12,6 +12,14 @@ class Chunk:
 		self.raw_data = raw_data
 		self.entries = []
 
+	def __repr__(self):
+		string = 'Chunk #{0}'.format(self.chunk_id)
+		
+		for e in self.entries:
+			string += '\n    '+repr(e)
+
+		return string
+
 	def process(self):
 		self.magic_number = self.raw_data[:2]
 
@@ -37,6 +45,10 @@ class Entry:
 	def __init__(self, raw_data):
 		self.raw_data = raw_data
 
+	def __repr__(self):
+		string = 'Entry #{0}'.format(self.entry_id)
+		return string
+
 	def process(self):
 		self.magic_number = self.raw_data[:4]
 		self.entry_id = int.from_bytes(self.raw_data[4:8], byteorder='little')
@@ -51,13 +63,26 @@ class Entry:
 
 			self.items = []
 			for i in self.item_offsets:
-				item_length = int.from_bytes(self.raw_data[i:i+1], byteorder='little')
+				item_length = int.from_bytes(self.raw_data[i:i+4], byteorder='little')
 				item = Item(self.raw_data[i:i+item_length])
+				item.process()
+				self.items.append(item)
 
 class Item:
 	def __init__(self, raw_data):
 		self.raw_data = raw_data
 
+	def process(self):
+		self.item_length = int.from_bytes(self.raw_data[:4], byteorder='little')
+		self.field_count = int.from_bytes(self.raw_data[12:16], byteorder='little')
+
+		offset = (8*self.field_count)+16
+		self.field_data = self.raw_data[16:offset]
+		self.name_length = int.from_bytes(self.raw_data[offset:offset+4], byteorder='little')
+		self.name_string = ''.join(chr(s) for s in self.raw_data[offset+4:offset+self.name_length+4])
+
+		offset += 4 + ((self.name_length // 4) + 1) * 4
+		
 def load(file_name):
 	with open(file_name, 'rb') as f:
 		nsf_file = NsfFile()
@@ -70,6 +95,10 @@ def load(file_name):
 
 			chunk = Chunk(data)
 			chunk.process()
+
+			print(chunk)
+
+			nsf_file.add_chunk(chunk)
 
 			# items = []
 			# for j in itemOffsets:
