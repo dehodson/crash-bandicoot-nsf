@@ -68,10 +68,11 @@ class Item:
 		self.raw_data = raw_data
 
 	def __repr__(self):
-		return 'Item "{0}" - id:{3} type:{1} sub_type:{2}'.format(self.name_string, self.type, self.sub_type, self.item_id)
+		return 'Item "{0}" - id:{3} type:{1} sub_type:{2}'.format(self.name_string, self.item_type, self.sub_type, self.item_id)
 
 	def process(self):
 		self.item_length = int.from_bytes(self.raw_data[:4], byteorder='little')
+		self.unused = self.raw_data[4:12]
 		self.field_count = int.from_bytes(self.raw_data[12:16], byteorder='little')
 
 		offset = (8*self.field_count)+16
@@ -86,12 +87,38 @@ class Item:
 		self.position_data = self.raw_data[offset+4:pos_offset+4]
 		offset = pos_offset+8
 
+		self.unused2 = self.raw_data[offset-4:offset]
 		self.item_id = int.from_bytes(self.raw_data[offset:offset+4], byteorder='little')
 		self.setting_length = int.from_bytes(self.raw_data[offset+4:offset+8], byteorder='little')
 		self.setting_data = self.raw_data[offset+8:offset+(self.setting_length*4)+8]
 		offset = offset+(self.setting_length*4)+12
-		self.type = int.from_bytes(self.raw_data[offset:offset+4], byteorder='little')
+
+		self.unused3 = self.raw_data[offset-4:offset]
+		self.item_type = int.from_bytes(self.raw_data[offset:offset+4], byteorder='little')
+
+		self.unused4 = self.raw_data[offset+4:offset+8]
 		self.sub_type = int.from_bytes(self.raw_data[offset+8:offset+12], byteorder='little')
+
+	def unprocess(self):
+		binary_string = b''
+		binary_string += self.item_length.to_bytes(4, byteorder='little')
+		binary_string += self.unused
+		binary_string += self.field_count.to_bytes(4, byteorder='little')
+		binary_string += self.field_data
+		binary_string += self.name_length.to_bytes(4, byteorder='little')
+		binary_string += str.encode(self.name_string)
+		binary_string += self.position_length.to_bytes(4, byteorder='little')
+		binary_string += self.position_data
+		binary_string += self.unused2
+		binary_string += self.item_id.to_bytes(4, byteorder='little')
+		binary_string += self.setting_length.to_bytes(4, byteorder='little')
+		binary_string += self.setting_data
+		binary_string += self.unused3
+		binary_string += self.item_type.to_bytes(4, byteorder='little')
+		binary_string += self.unused4
+		binary_string += self.sub_type.to_bytes(4, byteorder='little')
+
+		return binary_string
 		
 def load(file_name):
 	with open(file_name, 'rb') as f:
@@ -106,30 +133,5 @@ def load(file_name):
 			chunk = Chunk(data)
 			chunk.process()
 			nsf_file.add_chunk(chunk)
-
-			# items = []
-			# for j in itemOffsets:
-			# 	itemLength = int.from_bytes(data[i+j:i+j+1], byteorder='little')
-			# 	item = data[i+j:i+j+itemLength]
-			# 	itemLength = item[0:4]
-			# 	unused = item[4:12]
-			# 	fieldLength = int.from_bytes(item[12:16], byteorder='little')
-			# 	o = (8*fieldLength)+16
-			# 	fields = item[16:o]
-			# 	stringLen = int.from_bytes(item[o:o+4], byteorder='little')
-			# 	string = item[o+4:o+(stringLen)+4]
-			# 	a = ""
-			# 	for s in string:
-			# 		a += chr(s)
-			# 	print(a)
-			# 	o += stringLen+4
-			# 	posLen = int.from_bytes(item[o:o+4], byteorder='little')
-			# 	if posLen == 1:
-			# 		o += 20
-			# 		settingLen = int.from_bytes(item[o:o+4], byteorder='little') + 2
-			# 		o += (4 * settingLen)
-			# 		itemType = int.from_bytes(item[o:o+4], byteorder='little')
-			# 		if itemType == 34:
-			# 			print("Box found!")
 
 		return nsf_file
