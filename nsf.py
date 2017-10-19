@@ -98,6 +98,7 @@ class Item:
 
 		self.unused4 = self.raw_data[offset+4:offset+8]
 		self.sub_type = int.from_bytes(self.raw_data[offset+8:offset+12], byteorder='little')
+		self.victims = self.raw_data[offset+12:]
 
 	def unprocess(self):
 		binary_string = b''
@@ -106,7 +107,11 @@ class Item:
 		binary_string += self.field_count.to_bytes(4, byteorder='little')
 		binary_string += self.field_data
 		binary_string += self.name_length.to_bytes(4, byteorder='little')
-		binary_string += str.encode(self.name_string)
+
+		size = (math.ceil(self.name_length / 4)) * 4
+		padding = (size - self.name_length) * b'\x00'
+		
+		binary_string += str.encode(self.name_string) + padding
 		binary_string += self.position_length.to_bytes(4, byteorder='little')
 		binary_string += self.position_data
 		binary_string += self.unused2
@@ -117,6 +122,7 @@ class Item:
 		binary_string += self.item_type.to_bytes(4, byteorder='little')
 		binary_string += self.unused4
 		binary_string += self.sub_type.to_bytes(4, byteorder='little')
+		binary_string += self.victims
 
 		return binary_string
 		
