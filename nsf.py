@@ -1,4 +1,5 @@
 import binascii
+import math
 
 class NsfFile:
 	def __init__(self):
@@ -78,12 +79,12 @@ class Item:
 		self.name_length = int.from_bytes(self.raw_data[offset:offset+4], byteorder='little')
 		self.name_string = ''.join(chr(s) for s in self.raw_data[offset+4:offset+self.name_length+4])
 
-		offset += 4 + ((self.name_length // 4) + 1) * 4
+		offset += 4 + (math.ceil(self.name_length / 4)) * 4
 		self.position_length = int.from_bytes(self.raw_data[offset:offset+4], byteorder='little')
 
-		pos_offset = offset + (((self.position_length * 3) // 4) + 1) * 4
+		pos_offset = offset + (((self.position_length * 6) // 4) + 1) * 4
 		self.position_data = self.raw_data[offset+4:pos_offset+4]
-		offset = pos_offset+4
+		offset = pos_offset+8
 
 		self.item_id = int.from_bytes(self.raw_data[offset:offset+4], byteorder='little')
 		self.setting_length = int.from_bytes(self.raw_data[offset+4:offset+8], byteorder='little')
