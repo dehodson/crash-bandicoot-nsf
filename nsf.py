@@ -131,12 +131,6 @@ class Entry:
                     continue # The format of the first two items is unknown. Not an entity
                 item_length = int.from_bytes(self.raw_data[v:v+4], byteorder='little', signed=True)
                 item = Item(self.raw_data[v:self.item_offsets[i+1]])
-                items_match = self.raw_data[v:self.item_offsets[i+1]] == item.serialize()
-                if not items_match:
-                    print('DEBUG: Non-matching item for entry:{}'.format(self.entry_id_string))
-                    print('DEBUG:', binascii.hexlify(self.raw_data[v:self.item_offsets[i+1]]))
-                    print('DEBUG:', binascii.hexlify(item.serialize()))
-                    print('DEBUG:---------------------------------------------------------------------- ')
                 self.items.append(item)
 
 
@@ -165,21 +159,51 @@ FIELD_TYPES = {
 
 
 class Field:
-    def __init__(self, raw_field_info, raw_field_data):
-        self.raw_field_info = raw_field_info
-        self.raw_field_data = raw_field_data
+    def __init__(self, raw_data, initial_offset):
+        self.raw_data = raw_data
+        self.initial_offset = initial_offset
         self.process()
 
     def __repr__(self):
         return "Field of type: {}\n".format(FIELD_TYPES.get(self.field_type, 'Unknown ({})'.format(self.field_type)))
 
     def process(self):
-        self.field_type = int.from_bytes(self.raw_field_info[:2], byteorder='little')
+        offset = self.initial_offset
+
+        self.field_type = int.from_bytes(self.raw_data[offset:offset+2], byteorder='little')
+        self.field_offset = int.from_bytes(self.raw_data[offset+2:offset+4], byteorder='little')
+        self.flags = self.raw_data[offset+4:offset+5]
+        self.element_size = int.from_bytes(self.raw_data[offset+5:offset+6], byteorder='little')
+        self.row_count = int.from_bytes(self.raw_data[offset+6:offset+8], byteorder='little')
+
+        offset = self.field_offset
+        rc = self.row_count
+        self.element_count = int.from_bytes(self.raw_data[offset:offset+2], byteorder='little')
+        ec = self.element_count
+        es = self.element_size
+        offset += 2
+        self.metavalues = self.raw_data[offset:offset+2]
+        offset += 2
+        self.field_data = self.raw_data[offset:offset+(es*ec)]
+
+    def serialize(self):
+        binary_string = b''
+        binary_string += self.element_count.to_bytes(2, byteorder='little')
+        binary_string += self.metavalues
+        binary_string += self.field_data
+        return binary_string
 
 
 class Item:
     def __init__(self, raw_data):
         self.raw_data = raw_data
+
+        self.name_string = "Unnamed"
+        self.item_length = None
+        self.item_id = None
+        self.item_type = None
+        self.sub_type = None
+
         self.fields = []
         self.process()
 
@@ -193,61 +217,46 @@ class Item:
         self.item_length = int.from_bytes(self.raw_data[:4], byteorder='little', signed=True)
         self.unused = self.raw_data[4:12]
         self.field_count = int.from_bytes(self.raw_data[12:16], byteorder='little', signed=True)
-        offset = 16
 
+        field_offset = 4
         for i in range(self.field_count):
-            new_field = Field(self.raw_data[offset:offset+8], b'')
+            new_field = Field(self.raw_data[12:], field_offset)
             self.fields.append(new_field)
-            offset += 8
+            field_offset += 8
 
         offset = (8*self.field_count)+16
-        self.field_data = self.raw_data[16:offset]
-        self.name_length = int.from_bytes(self.raw_data[offset:offset+4], byteorder='little')
-        self.name_string = ''.join(chr(s) for s in self.raw_data[offset+4:offset+self.name_length+4])
+        self.field_headers = self.raw_data[16:offset]
 
-        offset += 4 + (math.ceil(self.name_length / 4)) * 4
-        self.position_length = int.from_bytes(self.raw_data[offset:offset+4], byteorder='little')
+        for f in self.fields:
+            if f.field_type == 0x2C:
+                self.name_length = int.from_bytes(f.metavalues, byteorder='little')
+                self.name_string = ''.join(chr(s) for s in f.field_data)
+            if f.field_type == 0x9F:
+                self.item_id = int.from_bytes(f.field_data, byteorder='little')
+            if f.field_type == 0xA9:
+                self.item_type = int.from_bytes(f.field_data, byteorder='little')
+            if f.field_type == 0xAA:
+                self.sub_type = int.from_bytes(f.field_data, byteorder='little')
 
-        pos_offset = offset + (((self.position_length * 6) // 4) + 1) * 4
-        self.position_data = self.raw_data[offset+4:pos_offset+4]
-        offset = pos_offset+8
-
-        self.unused2 = self.raw_data[offset-4:offset]
-        self.item_id = int.from_bytes(self.raw_data[offset:offset+4], byteorder='little')
-        self.setting_length = int.from_bytes(self.raw_data[offset+4:offset+8], byteorder='little')
-        self.setting_data = self.raw_data[offset+8:offset+(self.setting_length*4)+8]
-        offset = offset+(self.setting_length*4)+12
-
-        self.unused3 = self.raw_data[offset-4:offset]
-        self.item_type = int.from_bytes(self.raw_data[offset:offset+4], byteorder='little')
-
-        self.unused4 = self.raw_data[offset+4:offset+8]
-        self.sub_type = int.from_bytes(self.raw_data[offset+8:offset+12], byteorder='little')
-        self.victims = self.raw_data[offset+12:]
 
     def serialize(self):
         binary_string = b''
         binary_string += self.item_length.to_bytes(4, byteorder='little', signed=True)
         binary_string += self.unused
         binary_string += self.field_count.to_bytes(4, byteorder='little', signed=True)
-        binary_string += self.field_data
-        binary_string += self.name_length.to_bytes(4, byteorder='little')
+        binary_string += self.field_headers
 
-        size = (math.ceil(self.name_length / 4)) * 4
-        padding = (size - self.name_length) * b'\x00'
+        for f in self.fields:
+            p = len(binary_string)
+            while p < f.field_offset + 12:
+                binary_string += self.raw_data[p].to_bytes(1, byteorder='little')
+                p += 1
+            binary_string += f.serialize()
 
-        binary_string += str.encode(self.name_string) + padding
-        binary_string += self.position_length.to_bytes(4, byteorder='little')
-        binary_string += self.position_data
-        binary_string += self.unused2
-        binary_string += self.item_id.to_bytes(4, byteorder='little')
-        binary_string += self.setting_length.to_bytes(4, byteorder='little')
-        binary_string += self.setting_data
-        binary_string += self.unused3
-        binary_string += self.item_type.to_bytes(4, byteorder='little')
-        binary_string += self.unused4
-        binary_string += self.sub_type.to_bytes(4, byteorder='little')
-        binary_string += self.victims
+        p = len(binary_string)
+        while len(binary_string) < len(self.raw_data):
+            binary_string += self.raw_data[p].to_bytes(1, byteorder='little')
+            p += 1
 
         return binary_string
 
