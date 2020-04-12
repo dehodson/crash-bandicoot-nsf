@@ -73,7 +73,7 @@ class Chunk:
         self.process()
 
     def __repr__(self):
-        string = 'Chunk #{}\n'.format(self.chunk_id)
+        string = 'Chunk #{} Type:T{}\n'.format(self.chunk_id, self.chunk_type)
         for e in self.entries:
             string += textwrap.indent(repr(e), '  ')
         return string
@@ -89,16 +89,46 @@ class Chunk:
             self.chunk_id = int.from_bytes(self.raw_data[4:8], byteorder='little')
             self.entry_count = int.from_bytes(self.raw_data[8:12], byteorder='little')
             self.checksum = self.raw_data[12:16]
+
             self.entry_offsets = []
-            for i in range(self.entry_count):
+            for i in range(self.entry_count + 1):
                 self.entry_offsets.append(int.from_bytes(self.raw_data[16 + (i*4):20 + (i*4)], byteorder='little'))
 
-            self.entry_offsets.append(65536)
-
             self.entries = []
-            for i in range(1, len(self.entry_offsets)):
-                entry = Entry(self.raw_data[self.entry_offsets[i-1]:self.entry_offsets[i]])
+            for (i, v) in enumerate(self.entry_offsets[:-1]):
+                entry = Entry(self.raw_data[v:self.entry_offsets[i+1]])
                 self.entries.append(entry)
+
+    def serialize(self):
+        if binascii.hexlify(self.magic_number) != UNCOMPRESSED_CHUNK:
+            return self.raw_data
+
+        # Just return raw data for T1 chunks, their format is not like the others
+        if self.chunk_type == 1:
+            return self.raw_data
+
+        binary_string = b''
+        binary_string += self.magic_number
+        binary_string += self.chunk_type.to_bytes(2, byteorder='little')
+        binary_string += self.chunk_id.to_bytes(4, byteorder='little')
+        binary_string += self.entry_count.to_bytes(4, byteorder='little')
+        binary_string += self.checksum
+
+        for o in self.entry_offsets:
+            binary_string += o.to_bytes(4, byteorder='little')
+
+        while len(binary_string) < self.entry_offsets[0]:
+            binary_string += b'\x00'
+
+        for e in self.entries:
+            binary_string += e.serialize()
+
+        p = len(binary_string)
+        while len(binary_string) < len(self.raw_data):
+            binary_string += self.raw_data[p].to_bytes(1, byteorder='little')
+            p += 1
+
+        return binary_string
 
 
 class Entry:
