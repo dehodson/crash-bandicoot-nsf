@@ -100,6 +100,7 @@ class Chunk:
                 entry = Entry(self.raw_data[self.entry_offsets[i-1]:self.entry_offsets[i]])
                 self.entries.append(entry)
 
+
 class Entry:
     def __init__(self, raw_data):
         self.raw_data = raw_data
@@ -119,20 +120,45 @@ class Entry:
         self.entry_type = int.from_bytes(self.raw_data[8:12], byteorder='little')
         self.item_count = int.from_bytes(self.raw_data[12:16], byteorder='little')
 
-        if(self.entry_type == ENTRY_ENTITY):
+        if self.entry_type == ENTRY_ENTITY:
             self.item_offsets = []
 
-            for i in range(self.item_count):
+            for i in range(self.item_count + 1):
                 self.item_offsets.append(int.from_bytes(self.raw_data[16+(i*4):20+(i*4)], byteorder='little', signed=False))
 
             self.items = []
             for (i, v) in enumerate(self.item_offsets[:-1]):
+                # The format of the first two items is unknown. Not an entity
                 if i < 2:
-                    continue # The format of the first two items is unknown. Not an entity
+                    item = RawItem(self.raw_data[v:self.item_offsets[i+1]])
+                    self.items.append(item)
+                    continue
                 item_length = int.from_bytes(self.raw_data[v:v+4], byteorder='little', signed=True)
                 item = Item(self.raw_data[v:self.item_offsets[i+1]])
                 self.items.append(item)
 
+    def serialize(self):
+        if self.entry_type != ENTRY_ENTITY:
+            return self.raw_data
+
+        binary_string = b''
+        binary_string += self.magic_number
+        binary_string += self.entry_id.to_bytes(4, byteorder='little')
+        binary_string += self.entry_type.to_bytes(4, byteorder='little')
+        binary_string += self.item_count.to_bytes(4, byteorder='little')
+
+        for o in self.item_offsets:
+            binary_string += o.to_bytes(4, byteorder='little')
+
+        for i in self.items:
+            binary_string += i.serialize()
+
+        p = len(binary_string)
+        while len(binary_string) < len(self.raw_data):
+            binary_string += self.raw_data[p].to_bytes(1, byteorder='little')
+            p += 1
+
+        return binary_string
 
 FIELD_TYPES = {
     0x2C: 'Name',
@@ -192,6 +218,18 @@ class Field:
         binary_string += self.metavalues
         binary_string += self.field_data
         return binary_string
+
+
+class RawItem:
+    """A format for Items that are not understood"""
+    def __init__(self, raw_data):
+        self.raw_data = raw_data
+
+    def __repr__(self):
+        return 'RawItem - Unknown Data Format\n'
+
+    def serialize(self):
+        return self.raw_data
 
 
 class Item:
@@ -259,6 +297,7 @@ class Item:
             p += 1
 
         return binary_string
+
 
 def load(file_name):
     with open(file_name, 'rb') as f:
