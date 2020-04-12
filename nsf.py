@@ -67,6 +67,13 @@ class NsfFile:
     def add_chunk(self, chunk):
         self.chunks.append(chunk)
 
+    def serialize(self):
+        binary_string = b''
+        for c in self.chunks:
+            binary_string += c.serialize()
+        return binary_string
+
+
 class Chunk:
     def __init__(self, raw_data):
         self.raw_data = raw_data
@@ -329,7 +336,7 @@ class Item:
         return binary_string
 
 
-def load(file_name):
+def read(file_name):
     with open(file_name, 'rb') as f:
         nsf_file = NsfFile()
 
@@ -343,3 +350,9 @@ def load(file_name):
             nsf_file.add_chunk(chunk)
 
         return nsf_file
+
+
+def write(nsf_file, file_name):
+    with open(file_name, 'wb') as f:
+        f.write(nsf_file.serialize())
+        return True
