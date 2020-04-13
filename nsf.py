@@ -261,6 +261,7 @@ class RawItem:
     """A format for Items that are not understood"""
     def __init__(self, raw_data):
         self.raw_data = raw_data
+        self.fields = []
 
     def __repr__(self):
         return 'RawItem - Unknown Data Format\n'
